@@ -1,54 +1,54 @@
-
 import streamlit as st
-import subprocess, shutil, platform, sys, tempfile, os
+import subprocess, shutil, tempfile, os
 
-st.set_page_config(page_title="LaTeX → DOCX (with diagnostics)", page_icon="🧪")
-st.title("🧪 LaTeX → DOCX (with diagnostics)")
+st.set_page_config(page_title="LaTeX → Word (.docx)", page_icon="📄", layout="centered")
+st.title("📄 LaTeX → Word (.docx)")
+st.caption("Upload a .tex file, convert with Pandoc, and download a .docx.")
 
-# --- Diagnostics panel ---
-st.subheader("Environment diagnostics")
-pandoc_path = shutil.which("pandoc")
-st.write({"pandoc_path": pandoc_path, "python": sys.version, "platform": platform.platform()})
-if pandoc_path:
-    try:
-        out = subprocess.check_output(["pandoc", "-v"], stderr=subprocess.STDOUT).decode("utf-8", "ignore").splitlines()[0]
-    except Exception as e:
-        out = f"pandoc -v failed: {e}"
-    st.write({"pandoc_version": out})
-else:
-    st.error("Pandoc not found on PATH. Cloud should install it via packages.txt at repo root.")
+def get_next_available_filename(base_path: str) -> str:
+    d, b = os.path.split(base_path)
+    name, ext = os.path.splitext(b)
+    if not os.path.exists(base_path):
+        return base_path
+    i = 1
+    while True:
+        p = os.path.join(d, f"{name}{i}{ext}")
+        if not os.path.exists(p):
+            return p
+        i += 1
 
-st.divider()
+def pandoc_available() -> bool:
+    return shutil.which("pandoc") is not None
 
-st.caption("Upload a .tex file, convert via Pandoc, and download .docx")
+st.sidebar.header("⚙️ Options")
 output_basename = st.sidebar.text_input("Output filename (no extension)", "output")
 use_mathml = st.sidebar.checkbox("Use --mathml", value=True)
+
+st.write({"pandoc_path": shutil.which("pandoc")})
 
 uploaded_tex = st.file_uploader("Upload .tex", type=["tex"])
 if st.button("Convert", type="primary"):
     if not uploaded_tex:
         st.warning("Please upload a .tex file first.")
         st.stop()
-    if not pandoc_path:
-        st.error("Pandoc still missing. See diagnostics above.")
+    if not pandoc_available():
+        st.error("Pandoc is not installed in this container.")
         st.stop()
 
     with tempfile.TemporaryDirectory() as tmp:
         in_path = os.path.join(tmp, uploaded_tex.name or "main.tex")
         with open(in_path, "wb") as f:
             f.write(uploaded_tex.read())
-        out_path = os.path.join(tmp, (output_basename or "output") + ".docx")
-
+        out_path = get_next_available_filename(os.path.join(tmp, (output_basename or "output") + ".docx"))
         cmd = ["pandoc", in_path, "-o", out_path]
         if use_mathml:
             cmd.append("--mathml")
         st.code(" ".join(cmd))
-
         try:
             subprocess.run(cmd, check=True)
-            st.success("Done")
             with open(out_path, "rb") as f:
                 st.download_button("Download .docx", f, file_name=os.path.basename(out_path),
                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            st.success("Done")
         except subprocess.CalledProcessError as e:
             st.error(f"Pandoc failed: {e}")
